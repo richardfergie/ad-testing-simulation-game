@@ -1,0 +1,7 @@
+*.Rhtml~
+figure
+.Rhistory
+.RData
+cache
+elm-stuff
+*.elm~
