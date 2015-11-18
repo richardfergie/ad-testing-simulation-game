@@ -259,7 +259,7 @@ update action model = case action of
   RunWeek -> let
                ads = model.playerAds
                (model', ads') = trampoline <| allocateImpressions model.weeklyImpressions (model,ads)
-             in {model' | playerAds <- List.sortBy (\x -> (-1) * x.adId) ads',
+             in {model' | playerAds <- ads',
                           numberOfWeeks <- model.numberOfWeeks +1}
 
 actions : Signal.Mailbox Action
