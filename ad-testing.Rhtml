@@ -13,6 +13,7 @@
 
   <link rel="stylesheet" href="/css/normalize.css">
   <link rel="stylesheet" href="/css/skeleton.css">
+  <script src="/files/jstat.min.js"></script>
   <script src="/js/tester.js"></script>
 </head>
 <body>
@@ -34,6 +35,6 @@
   </div>
   <script type="text/javascript">
     var elmDiv = document.getElementById('testgame');
-    Elm.embed(Elm.Tester, elmDiv);
-</script>
+    var elmapp = Elm.embed(Elm.Tester, elmDiv,{startTime: Date.now()})
+  </script>
 </body>
