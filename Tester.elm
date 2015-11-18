@@ -56,9 +56,17 @@ fromJust : Maybe a -> a
 fromJust x = case x of
   Just y -> y
 
+listSample : Seed -> Generator a -> Int -> (Seed, List a)
+listSample seed gen n = trampoline <| lSamp seed gen n []
+
+lSamp seed gen i acc = case i of
+  0 -> Done (seed, acc)
+  _ -> let (s,seed') = Random.generate gen seed
+       in Continue (\() -> lSamp seed' gen (i-1) (s :: acc))
+
 betaSample : Seed -> Int -> Int -> (Float,Seed)
 betaSample seed alpha beta =
-   let (ls, seed') = Random.generate (Random.list (alpha+beta+1) (Random.float 0 1)) seed
+   let (seed', ls) = listSample seed (Random.float 0 1) (alpha+beta+1)
    in 
     (fromJust (List.head (List.drop (alpha-1) (List.sort ls))), seed')
 
