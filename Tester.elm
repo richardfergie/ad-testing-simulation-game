@@ -167,7 +167,7 @@ weightedSample seed xs =
       (index,_) = fromJust <| List.head <| List.filter (\(i,y) -> y > rand) <| List.indexedMap (\i x -> (i,x)) weightedCdf
    in (index, seed')
 
-evenWeights xs = List.map (\x -> (x,1)) xs
+evenWeights seed xs = (seed, List.map (\x -> (x,1)) xs)
 
 wilsonUpperBound phat n = (1/(1+(1/n)*1.96*1.96))*(phat + 1.96*1.96/(2*n) + 1.96*sqrt(phat*(1-phat)/n + 1.96*1.96/(4*n*n)))
 
@@ -177,7 +177,7 @@ wilsonWeightedCtr ads =
   in
     List.map2 (\x y -> (x,y)) ads weightings
     
-ucb1 ads =
+ucb1 seed ads =
   let observedCtrs = List.map (\x -> (toFloat x.clicks)/(toFloat x.impressions)) ads
       ln = logBase e
       zip = List.map2 (\x y -> (x,y))
@@ -187,13 +187,24 @@ ucb1 ads =
       weightsAll = List.map (\w -> if w > maxWeight - 0.0000000001 then 1 else 0) weights
       weightsNaN = List.map (\x -> if isNaN x then 1 else 0) observedCtrs
   in
-    if (List.isEmpty <| List.filter isNaN observedCtrs) then (zip ads weightsAll) else (zip ads weightsNaN) 
+    if (List.isEmpty <| List.filter isNaN observedCtrs) then (seed,(zip ads weightsAll)) else (seed,(zip ads weightsNaN)) 
 
+epsilonGreedy seed ads =
+  let observedCtrs = List.map (\x -> (toFloat x.clicks)/(toFloat x.impressions)) ads
+      (eps, seed') = Random.generate (Random.float 0 1) seed
+      (index, seed'') = Random.generate (Random.int 0 <| (List.length ads)-1) seed'
+      nansreplaced = List.map (\x -> if isNaN x then 0 else x) observedCtrs
+      maxCtr = fromJust <| List.maximum nansreplaced
+      exploitWeights = List.map (\w -> if w > maxCtr - 0.000001 then 1 else 0) nansreplaced
+      exploreWeights = List.indexedMap (\i _ -> if i==index then 1 else 0) nansreplaced
+      zip = List.map2 (\x y -> (x,y))
+  in if eps < 0.1 then (seed'',zip ads exploreWeights) else (seed'',zip ads exploitWeights)
 
 allocateImpression model ads =
   let (activeAds,inactiveAds) = List.partition (\ad -> ad.status == Active) ads
-      weightingFunc = if model.allocationMethod == Random then evenWeights else ucb1
-      (impressionIndex, seed') = weightedSample model.seed (weightingFunc activeAds)
+      weightingFunc = if model.allocationMethod == Random then evenWeights else epsilonGreedy
+      (seed,weightedsamp) = weightingFunc model.seed activeAds
+      (impressionIndex, seed') = weightedSample seed weightedsamp
       (p, seed'') = Random.generate (Random.float 0 1) seed'
       activeAds' = List.indexedMap (\i ad -> if i == impressionIndex then {ad | impressions <- ad.impressions+1, clicks <- if ad.trueCtr > p then ad.clicks+1 else ad.clicks } else ad) activeAds
   in
