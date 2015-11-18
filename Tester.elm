@@ -15,13 +15,15 @@ type alias Model = {
   weeklyImpressions : Int,
   playerAds : List Ad,
   allocationMethod : ImpressionAllocation,
-  seed : Seed
+  seed : Seed,
+  numberOfWeeks : Int
   }
 
 initialModel = { weeklyImpressions = 1000,
                  playerAds = [],
                  seed=startTimeSeed,
-                 allocationMethod = Random
+                 allocationMethod = Random,
+                 numberOfWeeks = 0
                  }
 
 port startTime : Float
@@ -127,7 +129,8 @@ view address model =
                               th [] [text <| formatPercentage <| (toFloat totalclicks)/(toFloat totalimpressions)],
                               th [] []]
                               ]
-             ]
+             ],
+   div [] [text <| String.append (toString model.numberOfWeeks) " weeks"]
    
    ]
 
@@ -198,7 +201,7 @@ epsilonGreedy seed ads =
       exploitWeights = List.map (\w -> if w > maxCtr - 0.000001 then 1 else 0) nansreplaced
       exploreWeights = List.indexedMap (\i _ -> if i==index then 1 else 0) nansreplaced
       zip = List.map2 (\x y -> (x,y))
-  in if eps < 0.1 then (seed'',zip ads exploreWeights) else (seed'',zip ads exploitWeights)
+  in if eps < 0.2 then (seed'',zip ads exploreWeights) else (seed'',zip ads exploitWeights)
 
 allocateImpression model ads =
   let (activeAds,inactiveAds) = List.partition (\ad -> ad.status == Active) ads
@@ -256,7 +259,8 @@ update action model = case action of
   RunWeek -> let
                ads = model.playerAds
                (model', ads') = trampoline <| allocateImpressions model.weeklyImpressions (model,ads)
-             in {model' | playerAds <- List.sortBy (\x -> (-1) * x.adId) ads'}
+             in {model' | playerAds <- List.sortBy (\x -> (-1) * x.adId) ads',
+                          numberOfWeeks <- model.numberOfWeeks +1}
 
 actions : Signal.Mailbox Action
 actions =
