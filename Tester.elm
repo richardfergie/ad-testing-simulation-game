@@ -92,21 +92,28 @@ view address model =
       totalclicks = List.sum <| List.map .clicks model.playerAds
   in
   div [] [
+   div [] [
    button [onClick address ResetAll] [text "Reset"],
-   button [onClick address RequestNewAd] [text "New Advert"],
+   button [onClick address RequestNewAd,
+           if List.isEmpty model.playerAds then class "button-primary" else class "button"] [text "New Advert"],
    button [onClick address ChangeAllocationMethod] [
      case model.allocationMethod of
        Random -> text "Switch to 'Optimise for...'"
        Bandit -> text "Switch to 'Rotate'"
+       ]
        ],
-   button [onClick address RunWeek] [text "Run"],
-   node "input" [ type' "range",
+   div [] [    
+     button [onClick address RunWeek,
+            if List.isEmpty model.playerAds then class "button" else class "button-primary"] [text "Run"],
+     span [] [text "Weekly impressions: "],       
+     node "input" [ type' "range",
                   Html.Attributes.min (toString 1),
                   Html.Attributes.max (toString 10000),
                   Html.Attributes.value (toString model.weeklyImpressions),
                   onSliderChange address
                   ] [],
-   span [] [text (toString model.weeklyImpressions)],
+     span [] [text (toString model.weeklyImpressions)]
+     ],
    table [] [thead [] [tr [] [th [] [text "Advert"],
                               th [] [text "Impressions"],
                               th [] [text "Clicks"],
@@ -150,7 +157,6 @@ activateAd i ad = if ad.adId == i then {ad | status <- Active } else ad
 filterActiveAds : List Ad -> List Ad
 filterActiveAds ads = List.filter (\ad -> ad.status == Active) ads
 
---allocateImpression : Model -> List Ad -> (Model, List Ad)
 allocateImpression model ads =
   let (activeAds,inactiveAds) = List.partition (\ad -> ad.status == Active) ads
       nactive = List.length activeAds
