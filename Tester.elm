@@ -157,13 +157,47 @@ activateAd i ad = if ad.adId == i then {ad | status <- Active } else ad
 filterActiveAds : List Ad -> List Ad
 filterActiveAds ads = List.filter (\ad -> ad.status == Active) ads
 
+weightCdf : List (a,Float) -> List Float
+weightCdf l = List.scanl (\(x,y) acc -> y+acc) 0 l |> List.drop 1 
+
+weightedSample seed xs =
+  let weightedCdf = weightCdf xs
+      maxWeight = fromJust <| List.maximum weightedCdf
+      (rand, seed') = Random.generate (Random.float 0 maxWeight) seed
+      (index,_) = fromJust <| List.head <| List.filter (\(i,y) -> y > rand) <| List.indexedMap (\i x -> (i,x)) weightedCdf
+   in (index, seed')
+
+evenWeights xs = List.map (\x -> (x,1)) xs
+
+wilsonUpperBound phat n = (1/(1+(1/n)*1.96*1.96))*(phat + 1.96*1.96/(2*n) + 1.96*sqrt(phat*(1-phat)/n + 1.96*1.96/(4*n*n)))
+
+wilsonWeightedCtr ads =
+  let observedCtrs = List.map (\x -> (toFloat x.clicks)/(toFloat x.impressions)) ads
+      weightings = List.map2 (\x y -> if isNaN x then 1 else wilsonUpperBound x (toFloat y.impressions)) observedCtrs ads
+  in
+    List.map2 (\x y -> (x,y)) ads weightings
+    
+ucb1 ads =
+  let observedCtrs = List.map (\x -> (toFloat x.clicks)/(toFloat x.impressions)) ads
+      ln = logBase e
+      zip = List.map2 (\x y -> (x,y))
+      t = toFloat <| List.sum <| List.map .impressions ads
+      weights = List.map2 (\x ad -> x + sqrt(2*(ln t)/(toFloat ad.impressions))) observedCtrs ads
+      maxWeight = fromJust <| List.maximum weights
+      weightsAll = List.map (\w -> if w > maxWeight - 0.0000000001 then 1 else 0) weights
+      weightsNaN = List.map (\x -> if isNaN x then 1 else 0) observedCtrs
+  in
+    if (List.isEmpty <| List.filter isNaN observedCtrs) then (zip ads weightsAll) else (zip ads weightsNaN) 
+
+
 allocateImpression model ads =
   let (activeAds,inactiveAds) = List.partition (\ad -> ad.status == Active) ads
-      nactive = List.length activeAds
-      (impressionIndex, seed') = Random.generate (Random.int 0 (nactive-1)) model.seed
-      activeAds' = List.indexedMap (\i ad -> if i == impressionIndex then {ad | newimps <- ad.newimps+1} else ad) activeAds
+      weightingFunc = if model.allocationMethod == Random then evenWeights else ucb1
+      (impressionIndex, seed') = weightedSample model.seed (weightingFunc activeAds)
+      (p, seed'') = Random.generate (Random.float 0 1) seed'
+      activeAds' = List.indexedMap (\i ad -> if i == impressionIndex then {ad | impressions <- ad.impressions+1, clicks <- if ad.trueCtr > p then ad.clicks+1 else ad.clicks } else ad) activeAds
   in
-    ({model | seed <- seed'},
+    ({model | seed <- seed''},
      List.append activeAds' inactiveAds)
 
 allocateImpressions n (model,ads) =
@@ -209,12 +243,9 @@ update action model = case action of
     Random -> {model | allocationMethod <- Bandit}
     Bandit -> {model | allocationMethod <- Random}
   RunWeek -> let
-               ads = List.map (\x -> {x | newimps = 0}) model.playerAds
-               nads = List.length ads
+               ads = model.playerAds
                (model', ads') = trampoline <| allocateImpressions model.weeklyImpressions (model,ads)
-               (model'',ads'') = trampoline <| allocateClicks nads (model',ads')
-               ads''' = List.map (\x -> {x - newimps}) ads''
-             in {model'' | playerAds <- List.sortBy (\x -> (-1) * x.adId) ads'''}
+             in {model' | playerAds <- List.sortBy (\x -> (-1) * x.adId) ads'}
 
 actions : Signal.Mailbox Action
 actions =
