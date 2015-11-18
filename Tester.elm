@@ -94,6 +94,7 @@ view address model =
       totalclicks = List.sum <| List.map .clicks model.playerAds
   in
   div [] [
+   div [] [text <| String.append (toString model.numberOfWeeks) <| if model.numberOfWeeks == 1 then " week" else " weeks"],
    div [] [
    button [onClick address ResetAll] [text "Reset"],
    button [onClick address RequestNewAd,
@@ -129,8 +130,7 @@ view address model =
                               th [] [text <| formatPercentage <| (toFloat totalclicks)/(toFloat totalimpressions)],
                               th [] []]
                               ]
-             ],
-   div [] [text <| String.append (toString model.numberOfWeeks) " weeks"]
+             ]
    
    ]
 
