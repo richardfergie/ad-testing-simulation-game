@@ -125,19 +125,18 @@ view address model =
                   ] [],
      span [] [text (toString model.weeklyImpressions)]
      ],
-   table [] [thead [] [tr [] [th [] [text "Advert"],
+   table [] [thead [] [tr [] [th [] [],
                               th [] [text "Impressions"],
                               th [] [text "Clicks"],
                               th [] [text "Observed CTR"],
-                              th [] [text "Pause/Activate"]]
-                       ],
-             tbody [] (List.map (viewAd address) model.playerAds),
-             thead [] [tr [] [th [] [text "Totals"],
+                              th [] [text "Pause/Activate"]],
+                       tr [] [th [] [text "Totals"],
                               th [] [text <| toString totalimpressions],
                               th [] [text <| toString totalclicks],
                               th [] [text <| formatPercentage <| (toFloat totalclicks)/(toFloat totalimpressions)],
                               th [] []]
-                              ]
+                       ],
+             tbody [] (List.map (viewAd address) model.playerAds)
              ]
    
    ]
