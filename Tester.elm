@@ -219,27 +219,6 @@ allocateImpressions n (model,ads) =
     0 -> Done (model,ads)
     _ -> Continue (\() -> allocateImpression model ads |> allocateImpressions (n-1))   
 
-allocateClick (model, ad) =
-  let (clcks, seed') = binomialSample model.seed ad.trueCtr ad.newimps
-  in
-    ({model | seed <- seed'},
-     {ad | impressions <- ad.impressions + ad.newimps,
-           clicks <- ad.clicks + clcks})
-
-updateNthAd n model ads =
-  let new = List.indexedMap (\i ad -> if i==(n-1) then allocateClick (model,ad) else (model,ad)) <| ads
-      newModel = fst <| fromJust <| List.head <| List.drop (n-1) new
-      newAds = List.map snd new
-  in
-    (newModel, newAds)
-    
-  
-
-allocateClicks n (model, ads) = case n of
-  0 -> Done (model, ads)
-  _ -> Continue (\() -> updateNthAd n model ads |> allocateClicks (n-1))
-
-
 update : Action -> Model -> Model
 update action model = case action of
   NoOp -> model
