@@ -1,10 +1,10 @@
-module Tester where
+module Tester exposing (main)
 
 import Html exposing (..)
 import Html.Events exposing (..)
 import Html.Attributes exposing (..)
 import Task exposing (Task, andThen)
-import Signal exposing (Signal, Address)
+--import Signal exposing (Signal, Address)
 import Random exposing (..)
 import String exposing (toInt,left)
 import Debug exposing (log)
@@ -26,10 +26,8 @@ initialModel = { weeklyImpressions = 1000,
                  numberOfWeeks = 0
                  }
 
-port startTime : Float
-
 startTimeSeed : Seed
-startTimeSeed = Random.initialSeed <| round startTime
+startTimeSeed = 15
 
 type alias Ad = {
   trueCtr : Float,
@@ -61,31 +59,31 @@ listSample seed gen n = trampoline <| lSamp seed gen n []
 
 lSamp seed gen i acc = case i of
   0 -> Done (seed, acc)
-  _ -> let (s,seed') = Random.generate gen seed
-       in Continue (\() -> lSamp seed' gen (i-1) (s :: acc))
+  _ -> let (s,newseed) = Random.generate gen seed
+       in Continue (\() -> lSamp newseed gen (i-1) (s :: acc))
 
 betaSample : Seed -> Int -> Int -> (Float,Seed)
 betaSample seed alpha beta =
-   let (seed', ls) = listSample seed (Random.float 0 1) (alpha+beta+1)
+   let (newseed, ls) = listSample seed (Random.float 0 1) (alpha+beta+1)
    in 
-    (fromJust (List.head (List.drop (alpha-1) (List.sort ls))), seed')
+    (fromJust (List.head (List.drop (alpha-1) (List.sort ls))), newseed)
 
 binomialSample : Seed -> Float -> Int -> (Int,Seed)
-binomialSample seed p n = trampoline <| binSample' seed p n 0
+binomialSample seed p n = trampoline <| binSample seed p n 0
 
-binSample' seed p n acc = case n of
+binSample seed p n acc = case n of
   0 -> Done (acc,seed)
-  _ -> let (s,seed') = Random.generate (Random.float 0 1) seed
+  _ -> let (s,newseed) = Random.generate (Random.float 0 1) seed
            v = if s < p then 1 else 0
-       in Continue (\() -> binSample' seed' p (n-1) (acc+v))
+       in Continue (\() -> binSample newseed p (n-1) (acc+v))
 
 newAdvert : Model -> (Ad, Model)
 newAdvert model =
-  let (ctr,seed') = betaSample model.seed 50 1000
+  let (ctr,newseed) = betaSample model.seed 50 1000
       n = List.length model.playerAds
   in
     ( {trueCtr = ctr, impressions=0, clicks=0, status=Active, adId=n+1},
-      {model | seed <- seed'})
+      {model | seed = newseed})
 
 onSliderChange : Address Action -> Attribute
 onSliderChange addr = on "input" targetValue (\val -> convertAndMessage addr val)
@@ -108,16 +106,17 @@ view address model =
    button [onClick address RequestNewAd,
            if List.isEmpty model.playerAds then class "button-primary" else class "button"] [text "New Advert"],
    button [onClick address ChangeAllocationMethod] [
-     case model.allocationMethod of
+     (case model.allocationMethod of
        Random -> text "Switch to 'Optimise for...'"
        Bandit -> text "Switch to 'Rotate'"
+     )
        ]
        ],
    div [] [    
      button [onClick address RunWeek,
             if List.isEmpty model.playerAds then class "button" else class "button-primary"] [text "Run"],
      span [] [text "Weekly impressions: "],       
-     node "input" [ type' "range",
+     node "input" [ type_ "range",
                   Html.Attributes.min (toString 1),
                   Html.Attributes.max (toString 10000),
                   Html.Attributes.value (toString model.weeklyImpressions),
@@ -160,9 +159,9 @@ viewAd address ad = tr [] [
           ]
 
 pauseAd : Int -> Ad -> Ad
-pauseAd i ad = if ad.adId == i then {ad | status <- Paused } else ad
+pauseAd i ad = if ad.adId == i then {ad | status = Paused } else ad
 
-activateAd i ad = if ad.adId == i then {ad | status <- Active } else ad
+activateAd i ad = if ad.adId == i then {ad | status = Active } else ad
 
 filterActiveAds : List Ad -> List Ad
 filterActiveAds ads = List.filter (\ad -> ad.status == Active) ads
@@ -173,9 +172,9 @@ weightCdf l = List.scanl (\(x,y) acc -> y+acc) 0 l |> List.drop 1
 weightedSample seed xs =
   let weightedCdf = weightCdf xs
       maxWeight = fromJust <| List.maximum weightedCdf
-      (rand, seed') = Random.generate (Random.float 0 maxWeight) seed
+      (rand, newseed) = Random.generate (Random.float 0 maxWeight) seed
       (index,_) = fromJust <| List.head <| List.filter (\(i,y) -> y > rand) <| List.indexedMap (\i x -> (i,x)) weightedCdf
-   in (index, seed')
+   in (index, newseed)
 
 evenWeights seed xs = (seed, List.map (\x -> (x,1)) xs)
 
@@ -201,25 +200,25 @@ ucb1 seed ads =
 
 epsilonGreedy seed ads =
   let observedCtrs = List.map (\x -> (toFloat x.clicks)/(toFloat x.impressions)) ads
-      (eps, seed') = Random.generate (Random.float 0 1) seed
-      (index, seed'') = Random.generate (Random.int 0 <| (List.length ads)-1) seed'
+      (eps, newseed) = Random.generate (Random.float 0 1) seed
+      (index, newnewseed) = Random.generate (Random.int 0 <| (List.length ads)-1) newseed
       nansreplaced = List.map (\x -> if isNaN x then 0 else x) observedCtrs
       maxCtr = fromJust <| List.maximum nansreplaced
       exploitWeights = List.map (\w -> if w > maxCtr - 0.000001 then 1 else 0) nansreplaced
       exploreWeights = List.indexedMap (\i _ -> if i==index then 1 else 0) nansreplaced
       zip = List.map2 (\x y -> (x,y))
-  in if eps < 0.2 then (seed'',zip ads exploreWeights) else (seed'',zip ads exploitWeights)
+  in if eps < 0.2 then (newnewseed,zip ads exploreWeights) else (newnewseed,zip ads exploitWeights)
 
 allocateImpression model ads =
   let (activeAds,inactiveAds) = List.partition (\ad -> ad.status == Active) ads
       weightingFunc = if model.allocationMethod == Random then evenWeights else epsilonGreedy
       (seed,weightedsamp) = weightingFunc model.seed activeAds
-      (impressionIndex, seed') = weightedSample seed weightedsamp
-      (p, seed'') = Random.generate (Random.float 0 1) seed'
-      activeAds' = List.indexedMap (\i ad -> if i == impressionIndex then {ad | impressions <- ad.impressions+1, clicks <- if ad.trueCtr > p then ad.clicks+1 else ad.clicks } else ad) activeAds
+      (impressionIndex, newseed) = weightedSample seed weightedsamp
+      (p, newnewseed) = Random.generate (Random.float 0 1) newseed
+      newActiveAds = List.indexedMap (\i ad -> if i == impressionIndex then {ad | impressions = ad.impressions+1, clicks = if ad.trueCtr > p then ad.clicks+1 else ad.clicks } else ad) activeAds
   in
-    ({model | seed <- seed''},
-     List.append activeAds' inactiveAds)
+    ({model | seed = newnewseed},
+     List.append newActiveAds inactiveAds)
 
 allocateImpressions n (model,ads) =
   case n of
@@ -230,23 +229,23 @@ update : Action -> Model -> Model
 update action model = case action of
   NoOp -> model
   ResetAll -> initialModel
-  RequestNewAd -> let (ad,model') = newAdvert model
+  RequestNewAd -> let (ad,newmodel) = newAdvert model
     in
-      {model' | playerAds <- ad :: (model'.playerAds) }
+      {newmodel | playerAds = ad :: (newmodel.playerAds) }
   PauseAd i ->
-    {model | playerAds <- List.map (pauseAd i) model.playerAds}
+    {model | playerAds = List.map (pauseAd i) model.playerAds}
   ActivateAd i ->
-    {model | playerAds <- List.map (activateAd i) model.playerAds}
+    {model | playerAds = List.map (activateAd i) model.playerAds}
   ChangeWeeklyImpressions i ->
-    {model | weeklyImpressions <- i }
+    {model | weeklyImpressions = i }
   ChangeAllocationMethod -> case model.allocationMethod of
-    Random -> {model | allocationMethod <- Bandit}
-    Bandit -> {model | allocationMethod <- Random}
+    Random -> {model | allocationMethod = Bandit}
+    Bandit -> {model | allocationMethod = Random}
   RunWeek -> let
                ads = model.playerAds
-               (model', ads') = trampoline <| allocateImpressions model.weeklyImpressions (model,ads)
-             in {model' | playerAds <- ads',
-                          numberOfWeeks <- model.numberOfWeeks +1}
+               (newmodel, newads) = trampoline <| allocateImpressions model.weeklyImpressions (model,ads)
+             in {newmodel | playerAds = newads,
+                          numberOfWeeks = model.numberOfWeeks +1}
 
 actions : Signal.Mailbox Action
 actions =
