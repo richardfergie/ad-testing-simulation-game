@@ -106,11 +106,10 @@ newAdvert model =
     ( {trueCtr = ctr, impressions=0, clicks=0, status=Active, adId=n+1},
       {model | seed = newseed})
 
-onWeeklyImpressionsChange : Attribute Action
-onWeeklyImpressionsChange = on "input" convertToWeeklyImpressions
-
-convertToWeeklyImpressions : Json.Decode.Decoder Action
-convertToWeeklyImpressions = Json.Decode.map ChangeWeeklyImpressions Json.Decode.int
+weeklyImpDecoder : String -> Int
+weeklyImpDecoder x = case (String.toInt x) of
+  Err _ -> 1000
+  Ok res -> res
 
 -- views
 view : Model -> Html Action
@@ -177,7 +176,7 @@ viewPlayerData model =
                   Html.Attributes.min (toString 1),
                   Html.Attributes.max (toString 10000),
                   Html.Attributes.value (toString model.weeklyImpressions),
-                  onWeeklyImpressionsChange
+                  onInput (\x -> weeklyImpDecoder x |> ChangeWeeklyImpressions)
                   ] [],
      span [] [text (toString model.weeklyImpressions)]
      ],
