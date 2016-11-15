@@ -18,7 +18,8 @@ type alias Model = {
   playerAds : List Ad,
   allocationMethod : ImpressionAllocation,
   seed : Seed,
-  numberOfWeeks : Int
+  numberOfWeeks : Int,
+  cheatCompetitor : Maybe Competitor
   }
 
 type alias Flags = {
@@ -31,7 +32,8 @@ init flag = ({
     playerAds = [],
     seed= Random.initialSeed flag.randomSeed,
     allocationMethod = Random,
-    numberOfWeeks = 0
+    numberOfWeeks = 0,
+    cheatCompetitor = Nothing
     }
     , Cmd.none)
 
@@ -43,6 +45,29 @@ type alias Ad = {
   adId : Int
   }
 
+type Strategy = Strategy (Model -> List Ad -> (Model, List Ad))
+unStrategy : Strategy -> (Model -> List Ad -> (Model, List Ad))
+unStrategy (Strategy x) = x
+
+
+type alias Competitor = {
+        modifier : Strategy,
+        competitorAds : List Ad,
+        competitorAllocationMethod : ImpressionAllocation
+    }
+
+cheat : Strategy
+cheat = Strategy <| \model ads -> case (List.length (filterActiveAds ads)) of
+  0 -> let (ad1,newmodel) = newAdvert model
+           (ad2,newnewmodel) = newAdvert newmodel
+       in (newnewmodel, ad1 :: ad2 :: [])
+  1 -> let (ad1,newmodel) = newAdvert model
+       in (newmodel, ad1 :: ads)
+  _ -> let (newadvert,newmodel) = newAdvert model
+           maxCtr = Sampling.fromJust <| List.maximum <| List.map .trueCtr ads
+           updatedAds = List.map (\ad -> if ad.trueCtr >= maxCtr then ad else {ad | status = Paused}) ads
+       in (newmodel, newadvert :: updatedAds)
+
 type Status = Active | Paused
 
 type ImpressionAllocation = Random | Bandit
@@ -53,7 +78,8 @@ type Action = ResetAll |
               ActivateAd Int |
               ChangeWeeklyImpressions Int |
               ChangeAllocationMethod |
-              RunWeek
+              RunWeek |
+              ToggleCheatCompetitor
 
 newAdvert : Model -> (Ad, Model)
 newAdvert model =
@@ -69,9 +95,45 @@ onWeeklyImpressionsChange = on "input" convertToWeeklyImpressions
 convertToWeeklyImpressions : Json.Decode.Decoder Action
 convertToWeeklyImpressions = Json.Decode.map ChangeWeeklyImpressions Json.Decode.int
 
--- view
+-- views
 view : Model -> Html Action
-view model =
+view model = div [class "row"] [
+  div [class "columns", class "seven"] [viewPlayerData model],
+  div [class "columns", class "five"] [viewCompetitorData model]
+      ]
+
+viewCompetitorData : Model -> Html Action
+viewCompetitorData model = div [] [
+    table [] [
+         thead [] [tr [] [
+                        th [] [text "Strategy"],
+                        th [] [text "Impressions"],
+                        th [] [text "Clicks"],
+                        th [] [text "CTR"]
+                       ]],
+        tbody [] [viewSingleCompetitor "Cheater " ToggleCheatCompetitor (model.cheatCompetitor)]
+        ]
+  ]
+
+viewSingleCompetitor : String -> Action -> Maybe Competitor -> Html Action
+viewSingleCompetitor name action mcomp = case mcomp of
+  Nothing -> tr [] [
+               td [] [checkbox action name False],
+               td [] [text "--"],
+               td [] [text "--"],
+               td [] [text "--"]
+               ]
+  Just comp -> let totalimpressions = List.sum <| List.map .impressions comp.competitorAds
+                   totalclicks = List.sum <| List.map .clicks comp.competitorAds
+               in tr [] [
+                td [] [checkbox action name True],
+                td [] [text <| toString totalimpressions],
+                td [] [text <| toString totalclicks],
+                td [] [text <| formatPercentage <| (toFloat totalclicks)/(toFloat totalimpressions)]
+                ]
+
+viewPlayerData : Model -> Html Action
+viewPlayerData model =
   let totalimpressions = List.sum <| List.map .impressions model.playerAds
       totalclicks = List.sum <| List.map .clicks model.playerAds
   in
@@ -134,6 +196,12 @@ viewAd ad = tr [] [
                ]
           ]
 
+checkbox : msg -> String -> Bool -> Html msg
+checkbox msg name c = label []
+    [ input [ type_ "checkbox", onCheck (\_ -> msg), checked c ] []
+    , text name
+    ]
+
 pauseAd : Int -> Ad -> Ad
 pauseAd i ad = if ad.adId == i then {ad | status = Paused } else ad
 
@@ -181,10 +249,10 @@ epsilonGreedy seed ads =
       zip = List.map2 (\x y -> (x,y))
   in if eps < 0.2 then (newnewseed,zip ads exploreWeights) else (newnewseed,zip ads exploitWeights)
 
-allocateImpression : Model -> List Ad -> (Model, List Ad)
-allocateImpression model ads =
+allocateImpression : Model -> ImpressionAllocation -> List Ad -> (Model, List Ad)
+allocateImpression model alloc ads =
   let (activeAds,inactiveAds) = List.partition (\ad -> ad.status == Active) ads
-      weightingFunc = if model.allocationMethod == Random then evenWeights else epsilonGreedy
+      weightingFunc = if alloc == Random then evenWeights else epsilonGreedy
       (seed,weightedsamp) = weightingFunc model.seed activeAds
       (impressionIndex, newseed) = Sampling.weightedSample seed weightedsamp
       (p, newnewseed) = Random.step (Random.float 0 1) newseed
@@ -193,11 +261,26 @@ allocateImpression model ads =
     ({model | seed = newnewseed},
      List.append newActiveAds inactiveAds)
 
-allocateImpressions : Int -> (Model, List Ad) -> Trampoline.Trampoline (Model, List Ad)
-allocateImpressions n (model,ads) =
+allocateImpressions : Int -> ImpressionAllocation -> (Model, List Ad) -> Trampoline.Trampoline (Model, List Ad)
+allocateImpressions n alloc (model,ads) =
   case n of
     0 -> Trampoline.done (model,ads)
-    _ -> Trampoline.jump (\() -> allocateImpression model ads |> allocateImpressions (n-1))
+    _ -> Trampoline.jump (\() -> allocateImpression model alloc ads |> allocateImpressions (n-1) alloc)
+
+runPlayerAds : Model -> Model
+runPlayerAds model = let
+               ads = model.playerAds
+               (newmodel, newads) = Trampoline.evaluate <| allocateImpressions model.weeklyImpressions model.allocationMethod (model,ads)
+             in {newmodel | playerAds = newads}
+
+runCompetitorAds : (Model -> Maybe Competitor) -> (Competitor -> Model -> Model) -> Model -> Model
+runCompetitorAds getCompetitor setCompetitor model = case (getCompetitor model) of
+  Nothing -> model
+  Just comp -> let strat = unStrategy comp.modifier
+                   (newmodel,newads) = strat model comp.competitorAds
+                   (newnewmodel, newnewads) = Trampoline.evaluate <| allocateImpressions model.weeklyImpressions comp.competitorAllocationMethod (newmodel, newads)
+                   newcomp = {comp | competitorAds = newnewads}
+               in setCompetitor newcomp newnewmodel
 
 update : Action -> Model -> (Model, Cmd Action)
 update action model = case action of
@@ -206,7 +289,8 @@ update action model = case action of
     playerAds = [],
     seed=model.seed,
     allocationMethod = Random,
-    numberOfWeeks = 0
+    numberOfWeeks = 0,
+    cheatCompetitor = Nothing
     }
     , Cmd.none)
   RequestNewAd -> let (ad,newmodel) = newAdvert model
@@ -221,11 +305,12 @@ update action model = case action of
   ChangeAllocationMethod -> case model.allocationMethod of
     Random -> ({model | allocationMethod = Bandit}, Cmd.none)
     Bandit -> ({model | allocationMethod = Random}, Cmd.none)
-  RunWeek -> let
-               ads = model.playerAds
-               (newmodel, newads) = Trampoline.evaluate <| allocateImpressions model.weeklyImpressions (model,ads)
-             in ({newmodel | playerAds = newads,
-                          numberOfWeeks = model.numberOfWeeks +1}, Cmd.none)
+  RunWeek -> let newmodel = runPlayerAds model
+                 newnewmodel = runCompetitorAds .cheatCompetitor (\x model -> {model | cheatCompetitor = Just x}) newmodel
+             in ({newnewmodel | numberOfWeeks = newnewmodel.numberOfWeeks + 1}, Cmd.none)
+  ToggleCheatCompetitor -> case model.cheatCompetitor of
+    Nothing -> ({model | cheatCompetitor = Just {modifier = cheat, competitorAds = [], competitorAllocationMethod = Bandit}}, Cmd.none)
+    Just _ -> ({model | cheatCompetitor = Nothing}, Cmd.none)
 
 subscriptions = \_ -> Sub.none
 
