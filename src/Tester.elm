@@ -1,4 +1,4 @@
-module Tester exposing (main)
+module Tester exposing (..)
 
 import Html exposing (..)
 import Html.Events exposing (..)
@@ -137,21 +137,26 @@ viewAd ad = tr [] [
 pauseAd : Int -> Ad -> Ad
 pauseAd i ad = if ad.adId == i then {ad | status = Paused } else ad
 
+activateAd : Int -> Ad -> Ad
 activateAd i ad = if ad.adId == i then {ad | status = Active } else ad
 
 filterActiveAds : List Ad -> List Ad
 filterActiveAds ads = List.filter (\ad -> ad.status == Active) ads
 
+evenWeights : seed -> List a -> (seed,List (a,number))
 evenWeights seed xs = (seed, List.map (\x -> (x,1)) xs)
 
+wilsonUpperBound : Float -> Float -> Float
 wilsonUpperBound phat n = (1/(1+(1/n)*1.96*1.96))*(phat + 1.96*1.96/(2*n) + 1.96*sqrt(phat*(1-phat)/n + 1.96*1.96/(4*n*n)))
 
+wilsonWeightedCtr : List Ad -> List (Ad, Float)
 wilsonWeightedCtr ads =
   let observedCtrs = List.map (\x -> (toFloat x.clicks)/(toFloat x.impressions)) ads
       weightings = List.map2 (\x y -> if isNaN x then 1 else wilsonUpperBound x (toFloat y.impressions)) observedCtrs ads
   in
     List.map2 (\x y -> (x,y)) ads weightings
 
+ucb1 : a -> List Ad -> (a, List (Ad, Float))
 ucb1 seed ads =
   let observedCtrs = List.map (\x -> (toFloat x.clicks)/(toFloat x.impressions)) ads
       ln = logBase e
@@ -164,6 +169,7 @@ ucb1 seed ads =
   in
     if (List.isEmpty <| List.filter isNaN observedCtrs) then (seed,(zip ads weightsAll)) else (seed,(zip ads weightsNaN))
 
+epsilonGreedy : Random.Seed -> List Ad -> (Random.Seed, List (Ad,Float))
 epsilonGreedy seed ads =
   let observedCtrs = List.map (\x -> (toFloat x.clicks)/(toFloat x.impressions)) ads
       (eps, newseed) = Random.step (Random.float 0 1) seed
@@ -175,6 +181,7 @@ epsilonGreedy seed ads =
       zip = List.map2 (\x y -> (x,y))
   in if eps < 0.2 then (newnewseed,zip ads exploreWeights) else (newnewseed,zip ads exploitWeights)
 
+allocateImpression : Model -> List Ad -> (Model, List Ad)
 allocateImpression model ads =
   let (activeAds,inactiveAds) = List.partition (\ad -> ad.status == Active) ads
       weightingFunc = if model.allocationMethod == Random then evenWeights else epsilonGreedy
@@ -186,6 +193,7 @@ allocateImpression model ads =
     ({model | seed = newnewseed},
      List.append newActiveAds inactiveAds)
 
+allocateImpressions : Int -> (Model, List Ad) -> Trampoline.Trampoline (Model, List Ad)
 allocateImpressions n (model,ads) =
   case n of
     0 -> Trampoline.done (model,ads)
