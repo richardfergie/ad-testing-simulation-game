@@ -142,16 +142,6 @@ activateAd i ad = if ad.adId == i then {ad | status = Active } else ad
 filterActiveAds : List Ad -> List Ad
 filterActiveAds ads = List.filter (\ad -> ad.status == Active) ads
 
-weightCdf : List (a,Float) -> List Float
-weightCdf l = List.scanl (\(x,y) acc -> y+acc) 0 l |> List.drop 1
-
-weightedSample seed xs =
-  let weightedCdf = weightCdf xs
-      maxWeight = Sampling.fromJust <| List.maximum weightedCdf
-      (rand, newseed) = Random.step (Random.float 0 maxWeight) seed
-      (index,_) = Sampling.fromJust <| List.head <| List.filter (\(i,y) -> y > rand) <| List.indexedMap (\i x -> (i,x)) weightedCdf
-   in (index, newseed)
-
 evenWeights seed xs = (seed, List.map (\x -> (x,1)) xs)
 
 wilsonUpperBound phat n = (1/(1+(1/n)*1.96*1.96))*(phat + 1.96*1.96/(2*n) + 1.96*sqrt(phat*(1-phat)/n + 1.96*1.96/(4*n*n)))
@@ -189,7 +179,7 @@ allocateImpression model ads =
   let (activeAds,inactiveAds) = List.partition (\ad -> ad.status == Active) ads
       weightingFunc = if model.allocationMethod == Random then evenWeights else epsilonGreedy
       (seed,weightedsamp) = weightingFunc model.seed activeAds
-      (impressionIndex, newseed) = weightedSample seed weightedsamp
+      (impressionIndex, newseed) = Sampling.weightedSample seed weightedsamp
       (p, newnewseed) = Random.step (Random.float 0 1) newseed
       newActiveAds = List.indexedMap (\i ad -> if i == impressionIndex then {ad | impressions = ad.impressions+1, clicks = if ad.trueCtr > p then ad.clicks+1 else ad.clicks } else ad) activeAds
   in

@@ -1,4 +1,4 @@
-module Sampling exposing (listSample,betaSample,binomialSample, fromJust)
+module Sampling exposing (listSample,betaSample,binomialSample, fromJust, weightCdf, weightedSample)
 {-|
 Sampling from beta and binomial distributions
 
@@ -35,3 +35,13 @@ binSample seed p n acc = case n of
   _ -> let (s,newseed) = Random.step (Random.float 0 1) seed
            v = if s < p then 1 else 0
        in Trampoline.jump (\() -> binSample newseed p (n-1) (acc+v))
+
+weightCdf : List (a,Float) -> List Float
+weightCdf l = List.scanl (\(x,y) acc -> y+acc) 0 l |> List.drop 1
+
+weightedSample seed xs =
+  let weightedCdf = weightCdf xs
+      maxWeight = fromJust <| List.maximum weightedCdf
+      (rand, newseed) = Random.step (Random.float 0 maxWeight) seed
+      (index,_) = fromJust <| List.head <| List.filter (\(i,y) -> y > rand) <| List.indexedMap (\i x -> (i,x)) weightedCdf
+   in (index, newseed)
