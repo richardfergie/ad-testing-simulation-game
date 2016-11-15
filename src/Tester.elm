@@ -268,10 +268,10 @@ allocateImpressions n alloc (model,ads) =
     _ -> Trampoline.jump (\() -> allocateImpression model alloc ads |> allocateImpressions (n-1) alloc)
 
 runPlayerAds : Model -> Model
-runPlayerAds model = let
-               ads = model.playerAds
-               (newmodel, newads) = Trampoline.evaluate <| allocateImpressions model.weeklyImpressions model.allocationMethod (model,ads)
-             in {newmodel | playerAds = newads}
+runPlayerAds model = case (model.playerAds) of
+  [] -> model
+  ads -> let (newmodel, newads) = Trampoline.evaluate <| allocateImpressions model.weeklyImpressions model.allocationMethod (model,ads)
+         in {newmodel | playerAds = newads}
 
 runCompetitorAds : (Model -> Maybe Competitor) -> (Competitor -> Model -> Model) -> Model -> Model
 runCompetitorAds getCompetitor setCompetitor model = case (getCompetitor model) of
