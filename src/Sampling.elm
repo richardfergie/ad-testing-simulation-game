@@ -1,4 +1,4 @@
-module Sampling exposing (listSample,betaSample,binomialSample, fromJust, weightCdf, weightedSample)
+module Sampling exposing (listSample,betaSample,binomialSample, fromJust, weightCdf, weightedSample, pickRandom)
 {-|
 Sampling from beta and binomial distributions
 
@@ -45,3 +45,16 @@ weightedSample seed xs =
       (rand, newseed) = Random.step (Random.float 0 maxWeight) seed
       (index,_) = fromJust <| List.head <| List.filter (\(i,y) -> y > rand) <| List.indexedMap (\i x -> (i,x)) weightedCdf
    in (index, newseed)
+
+isJust x = case x of
+  Nothing -> False
+  (Just _) -> True
+
+pickRandom : Seed -> List a -> (Seed, Maybe a)
+pickRandom seed x = case x of
+  [] -> (seed,Nothing)
+  xs -> let n = List.length xs
+            (npicked, newseed) = Random.step (Random.int 0 (n-1)) seed
+            mxs = List.indexedMap (\i x -> if i==npicked then Just x else Nothing) xs
+            el = List.filter isJust mxs
+        in (newseed, Maybe.withDefault Nothing <| List.head el)
