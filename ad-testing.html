@@ -17,25 +17,12 @@
     button {
       margin-right: 5px;
     }
-  </style>  
-  <script src="/files/jstat.min.js"></script>
+  </style>
   <script src="/js/tester.js"></script>
 </head>
 <body>
-  <!--begin.rcode echo=FALSE
-      opts_chunk$set(echo=FALSE,message=FALSE,warning=FALSE,fig.width=12,fig.height=8,upload.fun = image_uri)
-      set.seed(125124)
-      ho0 <- knit_hooks$get('output')
-
-      knit_hooks$set(
-         output = function(x, options) {
-            paste0("<div class='wrapoutput'>", ho0(x,options), "</div>")
-    }
-  )
-      end.rcode -->
   <div class="container">
     <h1>Ad Testing</h1>
-    <p>This document was last updated on <!--rinline format(Sys.time(), "%A %d %B %Y") --></p>
     <p>Below is a simple game in which your objective is to get the best overall click through rate.</p>
     <p>The game is kind of "turn based" with each turn lasting a week.</p>
     <p>When setting up for your turn you can add new adverts and pause or reactivate old adverts. You can also choose "rotate evenly" or "optimise for..." ad serving settings. The meaning of these corresponds to the AdWords equivalent.</p>
@@ -47,6 +34,6 @@
   </div>
   <script type="text/javascript">
     var elmDiv = document.getElementById('testgame');
-    var elmapp = Elm.embed(Elm.Tester, elmDiv,{startTime: Date.now()})
+    var elmapp = Elm.Tester.embed(elmDiv,{randomSeed: Date.now()})
   </script>
 </body>
