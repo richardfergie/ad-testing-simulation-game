@@ -20,7 +20,8 @@ type alias Model = {
   seed : Seed,
   numberOfWeeks : Int,
   cheatCompetitor : Maybe Competitor,
-  randomCompetitor : Maybe Competitor
+  randomCompetitor : Maybe Competitor,
+  alwaysAddCompetitor : Maybe Competitor
   }
 
 type alias Flags = {
@@ -35,7 +36,8 @@ init flag = ({
     allocationMethod = Random,
     numberOfWeeks = 0,
     cheatCompetitor = Nothing,
-    randomCompetitor = Nothing
+    randomCompetitor = Nothing,
+    alwaysAddCompetitor = Nothing
     }
     , Cmd.none)
 
@@ -84,6 +86,10 @@ randomStrategy = Strategy <| \model ads -> case (List.length (filterActiveAds ad
            newads = newad :: (List.map (pauseAd pauseId) ads)
        in (newmodel,newads)
 
+alwaysAddStrategy : Strategy
+alwaysAddStrategy = Strategy <| \model ads -> let (ad1,newmodel) = newAdvert model
+  in (newmodel, ad1 :: ads)
+
 type Status = Active | Paused
 
 type ImpressionAllocation = Random | Bandit
@@ -96,7 +102,8 @@ type Action = ResetAll |
               ChangeAllocationMethod |
               RunWeek |
               ToggleCheatCompetitor |
-              ToggleRandomCompetitor
+              ToggleRandomCompetitor |
+              ToggleAlwaysAddCompetitor
 
 newAdvert : Model -> (Ad, Model)
 newAdvert model =
@@ -128,7 +135,8 @@ viewCompetitorData model = div [] [
                         th [] [text "CTR"]
                        ]],
         tbody [] [viewSingleCompetitor " Cheater" ToggleCheatCompetitor (model.cheatCompetitor),
-                  viewSingleCompetitor " Random" ToggleRandomCompetitor (model.randomCompetitor)
+                  viewSingleCompetitor " Random" ToggleRandomCompetitor (model.randomCompetitor),
+                  viewSingleCompetitor " Always Add" ToggleAlwaysAddCompetitor (model.alwaysAddCompetitor)
                  ]
         ]
   ]
@@ -310,7 +318,8 @@ update action model = case action of
     allocationMethod = Random,
     numberOfWeeks = 0,
     cheatCompetitor = Nothing,
-    randomCompetitor = Nothing
+    randomCompetitor = Nothing,
+    alwaysAddCompetitor = Nothing
     }
     , Cmd.none)
   RequestNewAd -> let (ad,newmodel) = newAdvert model
@@ -328,13 +337,17 @@ update action model = case action of
   RunWeek -> let newmodel = runPlayerAds model
                  newnewmodel = runCompetitorAds .cheatCompetitor (\x model -> {model | cheatCompetitor = Just x}) newmodel
                  newnewnewmodel = runCompetitorAds .randomCompetitor (\x model -> {model | randomCompetitor = Just x}) newnewmodel
-             in ({newnewnewmodel | numberOfWeeks = newnewnewmodel.numberOfWeeks + 1}, Cmd.none)
+                 newnewnewnewmodel = runCompetitorAds .alwaysAddCompetitor (\x model -> {model | alwaysAddCompetitor = Just x}) newnewnewmodel
+             in ({newnewnewnewmodel | numberOfWeeks = newnewnewnewmodel.numberOfWeeks + 1}, Cmd.none)
   ToggleCheatCompetitor -> case model.cheatCompetitor of
     Nothing -> ({model | cheatCompetitor = Just {modifier = cheat, competitorAds = [], competitorAllocationMethod = Bandit}}, Cmd.none)
     Just _ -> ({model | cheatCompetitor = Nothing}, Cmd.none)
   ToggleRandomCompetitor -> case model.randomCompetitor of
     Nothing -> ({model | randomCompetitor = Just {modifier = randomStrategy, competitorAds = [], competitorAllocationMethod = Bandit}}, Cmd.none)
     Just _ -> ({model | randomCompetitor = Nothing}, Cmd.none)
+  ToggleAlwaysAddCompetitor -> case model.alwaysAddCompetitor of
+    Nothing -> ({model | alwaysAddCompetitor = Just {modifier = alwaysAddStrategy, competitorAds = [], competitorAllocationMethod = Bandit}}, Cmd.none)
+    Just _ -> ({model | alwaysAddCompetitor = Nothing}, Cmd.none)
 
 subscriptions = \_ -> Sub.none
 
